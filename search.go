@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	log "golang.org/x/exp/slog"
+	log "log/slog"
 )
 
 const DEFAULT_MAX_COUNT = 10000
