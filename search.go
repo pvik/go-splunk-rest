@@ -151,6 +151,10 @@ func (c Connection) SearchJobResults(jobID string) ([]map[string]interface{}, er
 // search-job status, and then return the result records
 func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]map[string]interface{}, error) {
 
+	if searchOptions.MaxCount == 0 {
+		searchOptions.MaxCount = DEFAULT_MAX_COUNT
+	}
+
 	sid, err := c.SearchJobCreate(searchQuery, searchOptions)
 	if err != nil {
 		return []map[string]interface{}{}, err
@@ -201,19 +205,23 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 			for i := 0; i < PARTITION_COUNT; i++ {
 				endT = startT.Add(time.Duration(d) * time.Second)
 
-				partitionSearchOptions := searchOptions
-
-				partitionSearchOptions.LatestTime = startT
-				partitionSearchOptions.EarliestTime = endT
-
 				wg.Add(1)
-				go func() {
+				go func(start, end time.Time) {
 					defer wg.Done()
+
+					log.Debug("partition", "#i", i,
+						"start", start.Format(TIME_FORMAT),
+						"end", end.Format(TIME_FORMAT),
+					)
+					partitionSearchOptions := searchOptions
+
+					partitionSearchOptions.LatestTime = start
+					partitionSearchOptions.EarliestTime = end
 
 					rec, err := c.Search(searchQuery, partitionSearchOptions)
 					partitionedErr[i] = err
 					partitionedResults[i] = rec
-				}()
+				}(startT, endT)
 
 				startT = endT
 			}
