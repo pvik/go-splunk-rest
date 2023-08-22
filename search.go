@@ -13,7 +13,8 @@ import (
 
 const DEFAULT_MAX_COUNT = 10000
 const SEARCH_WAIT = 5
-const TIME_FORMAT = "01/02/06:15:04:05"
+const TIME_FORMAT = "01/02/2006:15:04:05"
+const SPLUNK_TIME_FORMAT = "%m/%d/%Y:%H:%M:%S"
 const PARTITION_COUNT = 5
 
 // hold options that can be passed to a search job
@@ -80,6 +81,7 @@ func (c Connection) SearchJobCreate(searchQuery string, searchOptions SearchOpti
 	}
 
 	data.Add("max_count", fmt.Sprintf("%d", searchOptions.MaxCount))
+	data.Add("time_format", SPLUNK_TIME_FORMAT)
 
 	if searchOptions.UseEarliestTime {
 		data.Add("earliest_time", searchOptions.EarliestTime.Format(TIME_FORMAT))
