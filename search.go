@@ -209,14 +209,14 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 				go func(start, end time.Time) {
 					defer wg.Done()
 
-					log.Debug("partition", "#i", i,
+					log.Debug("partition",
 						"start", start.Format(TIME_FORMAT),
 						"end", end.Format(TIME_FORMAT),
 					)
 					partitionSearchOptions := searchOptions
 
-					partitionSearchOptions.LatestTime = start
-					partitionSearchOptions.EarliestTime = end
+					partitionSearchOptions.EarliestTime = start
+					partitionSearchOptions.LatestTime = end
 
 					rec, err := c.Search(searchQuery, partitionSearchOptions)
 					partitionedErr[i] = err
