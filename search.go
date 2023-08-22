@@ -3,17 +3,19 @@ package go_splunk_rest
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
-	log "golang.org/x/exp/slog"
+	log "log/slog"
 )
 
 const DEFAULT_MAX_COUNT = 10000
 const SEARCH_WAIT = 5
-const TIME_FORMAT = "01/02/06:15:04:05"
+const TIME_FORMAT = "01/02/2006:15:04:05"
+const SPLUNK_TIME_FORMAT = "%m/%d/%Y:%H:%M:%S"
 const PARTITION_COUNT = 5
 
 // hold options that can be passed to a search job
@@ -80,6 +82,7 @@ func (c Connection) SearchJobCreate(searchQuery string, searchOptions SearchOpti
 	}
 
 	data.Add("max_count", fmt.Sprintf("%d", searchOptions.MaxCount))
+	data.Add("time_format", SPLUNK_TIME_FORMAT)
 
 	if searchOptions.UseEarliestTime {
 		data.Add("earliest_time", searchOptions.EarliestTime.Format(TIME_FORMAT))
@@ -149,6 +152,10 @@ func (c Connection) SearchJobResults(jobID string) ([]map[string]interface{}, er
 // search-job status, and then return the result records
 func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]map[string]interface{}, error) {
 
+	if searchOptions.MaxCount == 0 {
+		searchOptions.MaxCount = DEFAULT_MAX_COUNT
+	}
+
 	sid, err := c.SearchJobCreate(searchQuery, searchOptions)
 	if err != nil {
 		return []map[string]interface{}{}, err
@@ -187,7 +194,7 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 			searchOptions.UseLatestTime {
 			// max count of returned results
 			// partition the search time range
-			d := (searchOptions.LatestTime.Sub(searchOptions.EarliestTime).Seconds()) / PARTITION_COUNT
+			d := math.Ceil((searchOptions.LatestTime.Sub(searchOptions.EarliestTime).Seconds()) / PARTITION_COUNT)
 
 			startT := searchOptions.EarliestTime
 			endT := searchOptions.EarliestTime
@@ -199,19 +206,24 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 			for i := 0; i < PARTITION_COUNT; i++ {
 				endT = startT.Add(time.Duration(d) * time.Second)
 
-				partitionSearchOptions := searchOptions
-
-				partitionSearchOptions.LatestTime = startT
-				partitionSearchOptions.EarliestTime = endT
-
 				wg.Add(1)
-				go func() {
+				go func(idx int, start, end time.Time) {
 					defer wg.Done()
 
+					log.Debug("partition",
+						"i", idx,
+						"start", start.Format(TIME_FORMAT),
+						"end", end.Format(TIME_FORMAT),
+					)
+					partitionSearchOptions := searchOptions
+
+					partitionSearchOptions.EarliestTime = start
+					partitionSearchOptions.LatestTime = end
+
 					rec, err := c.Search(searchQuery, partitionSearchOptions)
-					partitionedErr[i] = err
-					partitionedResults[i] = rec
-				}()
+					partitionedErr[idx] = err
+					partitionedResults[idx] = rec
+				}(i, startT, endT)
 
 				startT = endT
 			}
@@ -225,8 +237,11 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 					return results, partitionedErr[idx]
 				}
 
+				log.Debug("partition results", "idx", idx, "count", len(res))
 				results = append(results, res...)
 			}
+
+			return results, nil
 		}
 	}
 

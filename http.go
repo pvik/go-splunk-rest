@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	log "golang.org/x/exp/slog"
+	log "log/slog"
 )
 
 func (c Connection) httpCall(method, endpoint string, headers map[string]string, data []byte) ([]byte, int, error) {
