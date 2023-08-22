@@ -3,6 +3,7 @@ package go_splunk_rest
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sync"
@@ -193,7 +194,7 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 			searchOptions.UseLatestTime {
 			// max count of returned results
 			// partition the search time range
-			d := (searchOptions.LatestTime.Sub(searchOptions.EarliestTime).Seconds()) / PARTITION_COUNT
+			d := math.Ceil((searchOptions.LatestTime.Sub(searchOptions.EarliestTime).Seconds()) / PARTITION_COUNT)
 
 			startT := searchOptions.EarliestTime
 			endT := searchOptions.EarliestTime
@@ -206,10 +207,11 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 				endT = startT.Add(time.Duration(d) * time.Second)
 
 				wg.Add(1)
-				go func(start, end time.Time) {
+				go func(idx int, start, end time.Time) {
 					defer wg.Done()
 
 					log.Debug("partition",
+						"i", idx,
 						"start", start.Format(TIME_FORMAT),
 						"end", end.Format(TIME_FORMAT),
 					)
@@ -219,9 +221,9 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 					partitionSearchOptions.LatestTime = end
 
 					rec, err := c.Search(searchQuery, partitionSearchOptions)
-					partitionedErr[i] = err
-					partitionedResults[i] = rec
-				}(startT, endT)
+					partitionedErr[idx] = err
+					partitionedResults[idx] = rec
+				}(i, startT, endT)
 
 				startT = endT
 			}
@@ -235,8 +237,11 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 					return results, partitionedErr[idx]
 				}
 
+				log.Debug("partition results", "idx", idx, "count", len(res))
 				results = append(results, res...)
 			}
+
+			return results, nil
 		}
 	}
 
