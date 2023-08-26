@@ -151,6 +151,10 @@ func (c Connection) SearchJobResults(jobID string) ([]map[string]interface{}, er
 // this will queue a search job, and wait in SEARCH_WAIT increments to check
 // search-job status, and then return the result records
 func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]map[string]interface{}, error) {
+	return c.search(searchQuery, searchOptions, 0)
+}
+
+func (c Connection) search(searchQuery string, searchOptions SearchOptions, partitionLevel int) ([]map[string]interface{}, error) {
 
 	if searchOptions.MaxCount == 0 {
 		searchOptions.MaxCount = DEFAULT_MAX_COUNT
@@ -206,24 +210,44 @@ func (c Connection) Search(searchQuery string, searchOptions SearchOptions) ([]m
 			for i := 0; i < PARTITION_COUNT; i++ {
 				endT = startT.Add(time.Duration(d) * time.Second)
 
-				wg.Add(1)
-				go func(idx int, start, end time.Time) {
-					defer wg.Done()
+				if partitionLevel <= 6 { // partitionLevel = 6 , 15625 goroutines could be spawned,
+					wg.Add(1)
+					go func(idx int, start, end time.Time) {
+						defer wg.Done()
 
+						log.Debug("partition",
+							"i", idx,
+							"start", start.Format(TIME_FORMAT),
+							"end", end.Format(TIME_FORMAT),
+						)
+						partitionSearchOptions := searchOptions
+
+						partitionSearchOptions.EarliestTime = start
+						partitionSearchOptions.LatestTime = end
+
+						rec, err := c.search(searchQuery, partitionSearchOptions, partitionLevel+1)
+						partitionedErr[idx] = err
+						partitionedResults[idx] = rec
+					}(i, startT, endT)
+				} else {
+					// partitionLevel = 7 , 78125 goroutines could be spawned,
+					//  stop spawning more goroutines, and make searches sequentially
 					log.Debug("partition",
-						"i", idx,
-						"start", start.Format(TIME_FORMAT),
-						"end", end.Format(TIME_FORMAT),
+						"async", false,
+						"i", i,
+						"start", startT.Format(TIME_FORMAT),
+						"end", endT.Format(TIME_FORMAT),
 					)
+
 					partitionSearchOptions := searchOptions
 
-					partitionSearchOptions.EarliestTime = start
-					partitionSearchOptions.LatestTime = end
+					partitionSearchOptions.EarliestTime = startT
+					partitionSearchOptions.LatestTime = endT
 
-					rec, err := c.Search(searchQuery, partitionSearchOptions)
-					partitionedErr[idx] = err
-					partitionedResults[idx] = rec
-				}(i, startT, endT)
+					rec, err := c.search(searchQuery, partitionSearchOptions, partitionLevel+1)
+					partitionedErr[i] = err
+					partitionedResults[i] = rec
+				}
 
 				startT = endT
 			}
