@@ -16,6 +16,10 @@ go get github.com/pvik/go-splunk-rest
 
 ## Examples
 
+[Splunk2DB](https://github.com/pvik/splunk2db) uses this library, for additional code on how to use this library.
+
+---
+
 To make a simple blocking search 
 
 ```go
